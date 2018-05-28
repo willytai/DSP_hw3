@@ -11,15 +11,17 @@ using namespace std;
 
 struct Node
 {
-	Node(string& k) : _prob(0.0) { _key = k; }
+	Node(string& k) : _prob(-1.0/0.0), _parent(NULL) { _key = k; }
 	~Node() {}
 
 	void setProb(double prob) { _prob = prob; }
+	void setParent(Node* p) { _parent = p; }
 	double getProb() { return _prob; }
 	string Key() { return _key; }
 
 	string _key;
 	double _prob;
+	Node*  _parent;
 };
 
 class Graph
@@ -33,84 +35,70 @@ public:
 		}
 	}
 
-	void addNodes(vector<Node*>& GuoNodes) { _graph.push_back(GuoNodes); }
+	void addNodes(vector<Node*>& GuoNodes) { _graph.push_back(GuoNodes); update(); }
 	
-	void compute() {
-		// if (_graph[0].size() != 1) {
-		// 	assert(_graph[1].size() == 1);
-		// 	Node*& ref = _graph[1][0];
-		// 	double maxprob = -1.0/0.0;
-		// 	int max = 0;
-		// 	for (int candidate = 0; candidate < _graph[0].size(); ++candidate) {
-		// 		double new_prob = getProb(_graph[1][0]->Key().c_str(), _graph[0][candidate]->Key().c_str());
-		// 		if (maxprob < new_prob) {
-		// 			maxprob = new_prob;
-		// 			max = candidate;
-		// 		}
-		// 	}
-		// 	_graph[0][max]->setProb(maxprob);
-		// } else _graph[0][0]->setProb(94.87);
+	void update() {
+		if (_graph.size() == 1) {
+			for (int candidate = 0; candidate < _graph[0].size(); ++candidate) {
+				double log_prob = getProb("<s>", _graph[0][candidate]->Key().c_str());
+				_graph[0][candidate]->setProb(log_prob);
+			}
+			return;
+		}
 
-		for (int candidate = 0; candidate < _graph[0].size(); ++candidate)
-			_graph[0][candidate]->setProb(getProb("<s>", _graph[0][candidate]->Key().c_str()));
+		int previous = _graph.size() - 2;
+		int current  = previous + 1;
 
-		for (int current = 1; current < _graph.size(); ++current) {
-			for (int candidate = 0; candidate < _graph[current].size(); ++candidate) {
-				double maxprob = -1.0/0.0;
-				Node*& w2      = _graph[current][candidate];
-				for (int previous = 0; previous < _graph[current-1].size(); ++previous) {
-					Node*& w1       = _graph[current-1][previous];
-					double pre_prob = _graph[current-1][previous]->getProb();
-					double new_prob = getProb(w1->Key().c_str(), w2->Key().c_str()) + pre_prob;
-
-					if (maxprob < new_prob)	maxprob = new_prob;
+		for (int candidate = 0; candidate < _graph[current].size(); ++candidate) {
+			double max_prob = -1.0/0.0;
+			int maxid = -1;
+			for (int pre = 0; pre < _graph[previous].size(); ++pre) {
+				Node*& origin_node = _graph[previous][pre];
+				double origin_prob = _graph[previous][pre]->_prob;
+				double new_prob = origin_prob + getProb(origin_node->Key().c_str(), _graph[current][candidate]->Key().c_str());
+				if (max_prob < new_prob) {
+					max_prob = new_prob;
+					maxid    = pre;
 				}
-				w2->setProb(maxprob);
 			}
-		}
-	}
-
-	void trace() {
-		for (int i = 0; i < _graph.size(); ++i) {
-			int max = 0;
-			for (int j = 1; j < _graph[i].size(); ++j) {
-				if (_graph[i][max]->getProb() < _graph[i][j]->getProb())
-					max = j;
-			}
-			_result.push_back(max);
+			_graph[current][candidate]->setProb(max_prob);
+			_graph[current][candidate]->setParent(_graph[previous][maxid]);
 		}
 
-
-
-		// debug
-		// cout << "CHECK" << endl;
-		// for (int i = 0; i < _graph.size(); ++i)
-		// 	cout << setw(5) << _graph[i].size() << ' ';
-		// cout << endl;
-		// for (int i = 0; i < _graph.size(); ++i)
-		// 	cout << setw(5) << _result[i] << ' ';
-		// cout << endl;
 	}
 
 	void print() {
+		Node* n;
+		double max = -1.0/0.0;
+		for (int i = 0; i < _graph.back().size(); ++i) {
+			if (_graph.back()[i]->getProb() > max) {
+				max = _graph.back()[i]->getProb();
+				n   = _graph.back()[i];
+			}
+		}
+
+		vector<string> tmp;
 		cout << "<s>";
-		for (int i = 0; i < _graph.size(); ++i)
-			cout << " " << _graph[i][_result[i]]->Key();
+		while(true) {
+			if (!n) break;
+			tmp.push_back(n->Key());
+			n = n->_parent;
+		}
+		for (int i = tmp.size()-1; i >= 0; --i)
+			cout << " " << tmp[i];
 		cout << " </s>" << endl;
 	}
 
 private:
 	vector<vector<Node*> > _graph;
-	vector<int>            _result;
 	Ngram* 				   _lm;
 	Vocab                  _voc;
-
 
 	double getProb(const char* w1, const char* w2) {
 		VocabIndex wd1 = _voc.getIndex(w1);
 		VocabIndex wd2 = _voc.getIndex(w2);
 
-		if (wd1 == Vocab_None)
+		if (wd1 == Vocab_None) 
 			wd1 = _voc.getIndex(Vocab_Unknown);
 		if (wd2 == Vocab_None)
 			wd2 = _voc.getIndex(Vocab_Unknown);
@@ -132,14 +120,12 @@ void ReadMap(string filename, map<string, vector<string> >& ZhuYinMap) {
 
 		ss >> ZhuYin;
 
-		while (ss >> Guo) {
+		while (ss >> Guo)
 			ZhuYinMap[ZhuYin].push_back(Guo);
-		}
 	}
 }
 
 int main(int argc, char const *argv[]) {
-	
 	string       test(argv[2]);
 	string       ZhuYin(argv[4]);
 	const char*  LM(argv[6]);
@@ -177,8 +163,7 @@ int main(int argc, char const *argv[]) {
 				tmp.push_back(new Node(ZhuYinMap[Guo][i]));
 			GG.addNodes(tmp);
 		}
-		GG.compute();
-		GG.trace();
+
 		GG.print();
 	}
 
